@@ -24,8 +24,7 @@ enum {
 	Qend,
 };
 
-static FsFile fsfile[Qend + 1] = {
-	[Qvar]    = { "var",   0666|DMDIR },
+static FsFile fsfile[Qend] = {
 	[Qnew]    = { "new",   0222 },
 	[Qdel]    = { "del",   0222 },
 };
