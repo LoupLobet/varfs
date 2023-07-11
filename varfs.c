@@ -4,8 +4,8 @@
 #include <thread.h>
 #include <9p.h>
 
+#include "err.h"
 #include "util.h"
-#include "var.h"
 
 #define TYPE(path)		((int)(path) & 0xFF)
 
@@ -14,9 +14,19 @@ typedef struct {
 	ulong mode;
 } FsFile;
 
+typedef struct {
+	char *name;
+	char *data;
+	int ndata;
+} Var;
+
+static void	 delvar(Req *);
+static void	 destroy(File *);
+static void	 newvar(Req *);
 static void	 fsread(Req *);
 static void	 fswrite(Req *);
 static void	 fsinit(void);
+static void	 writevar(Req *);
 
 enum {
 	Qnew,
@@ -25,97 +35,129 @@ enum {
 };
 
 static FsFile fsfile[Qend] = {
-	[Qnew]    = { "new",   0222 },
-	[Qdel]    = { "del",   0222 },
+	[Qnew]    = { "new",   0666 },
+	[Qdel]    = { "del",   0666 },
 };
 
 static Srv fs = {
 	.read = fsread,
 	.write = fswrite,
+	/* See 9p(3), for file tree handled functions */
 };
-
-static uvlong npath = 0;
-static Map *vars;
 
 void
 threadmain(int argc, char *argv[])
 {
-	vars = mapalloc();
 	fsinit();
+}
+
+static void
+delvar(Req *r)
+{
+	Err *e = nil;
+	File *f;
+	char *name;
+
+	for (name = strtok(r->ifcall.data, "\n"); name != nil;
+	     name = strtok(NULL, "\n"))
+	{
+		f = walkfile(fs.tree->root, name);
+		if (f == nil || removefile(f)) {
+			if (e == nil && (e = err("could not delete var:")) == nil)
+				sysfatal("something went wrong ...\n");
+			errcat(e, "\n", name);
+			continue;
+		}
+	}
+	if (e != nil)
+		respond(r, e->data);
+	else {
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+	}
+}
+
+static void
+destroy(File *f)
+{
+	Var *v;
+
+	v = f->aux;
+	if (v != nil) {
+		free(v->name);
+		if (v->ndata)
+			free(v->data);
+		free(v);
+	}
+}
+
+static void
+newvar(Req *r)
+{
+	Err *e = nil;
+	File *f;
+	Var *v;
+	char *name;
+
+	for (name = strtok(r->ifcall.data, "\n"); name != nil;
+	     name = strtok(NULL, "\n"))
+	{
+		f = createfile(fs.tree->root, name, r->fid->uid, 0666, nil);
+		if (f == nil) {
+			if (e == nil && (e = err("could not create var:\n")) == nil)
+				sysfatal("something went wrong ...\n");
+			errcat(e, name, "\n");
+			continue;
+		}
+		v = emalloc9p(sizeof(Var));
+		v->name = estrdup9p(name);
+		v->data = nil;
+		f->aux = v;
+	}
+	if (e != nil)
+		respond(r, e->data);
+	else {
+		r->ofcall.count = r->ifcall.count;
+		respond(r, nil);
+	}
 }
 
 static void
 fsread(Req *r)
 {
-	Var *var;
+	Var *v;
 	ulong path;
 
+	v = r->fid->file->aux;
 	path = r->fid->qid.path;
 	switch (TYPE(path)) {
 	case Qnew:
 	case Qdel:
-		sysfatal("varfs fatal error");
+		respond(r, "this file isn't supposed to be read");
 		break;
 	default:
-		if ((var = varbyid(vars, path)) != nil) {
-			readstr(r, var->val);
-			respond(r, nil);
-		} else
-			respond(r, "no such variable");
+		readstr(r, v->data);
+		respond(r, nil);
 		break;
 	}
+
 }
 
 static void
 fswrite(Req *r)
 {
-	File *file;
 	ulong path;
-	char *name;
-	Var *var;
 
 	path = r->fid->qid.path;
 	switch (TYPE(path)) {
 	case Qnew:
-		name = r->ifcall.data;
-		for (name = strtok(r->ifcall.data, "\n"); name != nil;
-		     name = strtok(NULL, "\n"))
-		{
-			file = createfile(fs.tree->root, name, nil, 0777, nil);
-			if (file != nil) {
-				(void)varadd(vars, npath, name, nil, file);
-				npath++;
-			}
-		}
-		r->ofcall.count = r->ifcall.count;
-		respond(r, nil);
+		newvar(r);
 		break;
 	case Qdel:
-		name = r->ifcall.data;
-		for (name = strtok(r->ifcall.data, "\n"); name != nil;
-		     name = strtok(NULL, "\n"))
-		{
-			/*
-			 * walkfile(3) then removefile(3) could have been used
-			 * spot the var exists, but if the var exists, we must
-			 * go through vars map anyway to spot variable name.
-			 * But it's possible to retrieve the File pointer in
-			 * the Var struct and loop once in total.
-			 */
-			if ((var = varbyname(vars, name)) != nil) {
-				if (removefile(var->file))
-					print("can't delete file %s\n", name);
-				if (vardel(vars, var->id))
-					print("can't delete variable %s\n", name);
-			}
-		}
-		r->ofcall.count = r->ifcall.count;
-		respond(r, nil);
+		delvar(r);
 		break;
 	default:
-		varset(vars, path, r->ifcall.data);
-		r->ofcall.count = r->ifcall.count;
-		respond(r, nil);
+		writevar(r);
 		break;
 	}
 }
@@ -126,11 +168,22 @@ fsinit(void)
 	int i;
 
 	/* build file tree */
-	fs.tree = alloctree(nil, nil, DMDIR|0777, nil);
-	for (i = Qnew; i < Qend; i++) {
+	fs.tree = alloctree(nil, nil, DMDIR|0777, destroy);
+	for (i = Qnew; i < Qend; i++)
 		createfile(fs.tree->root, fsfile[i].name, nil, fsfile[i].mode, nil);
-		npath++;
-	}
 	fs.foreground = 1;
 	threadpostmountsrv(&fs, "varfs", nil, MREPL | MCREATE);
+}
+
+static void
+writevar(Req *r)
+{
+	Var *v;
+
+	v = r->fid->file->aux;
+	v->data = erealloc9p(v->data, r->ifcall.count + 1);
+	strcpy(v->data, r->ifcall.data);
+	v->ndata = r->ifcall.count;
+	r->ofcall.count = r->ifcall.count;
+	respond(r, nil);
 }
