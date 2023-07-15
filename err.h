@@ -7,6 +7,6 @@ typedef struct {
 	char full;
 } Err;
 
-Err	*err(char *);
-Err *errcat(Err *, char *, char *);
+Err	*err(void);
+Err *errcat(Err *, char *, ...);
 void	 errfree(Err *);

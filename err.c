@@ -1,38 +1,42 @@
 #include <u.h>
 #include <libc.h>
+/* for emalloc9p(3) */
+#include <fcall.h>
+#include <thread.h>
+#include <9p.h>
 
 #include "err.h"
-#include "util.h"
 
 Err *
-err(char *s)
+err(void)
 {
 	Err *e;
 
-
-	if (strlen(s) + 3 >= ERRMAX)
-		return nil;
-	e = emalloc(sizeof(Err));
-	strcpy(e->data, s);
-	e->cat = e->data + strlen(s);
+	e = emalloc9p(sizeof(Err));
+	e->ndata = 0;
+	e->full = 0;
+	e->cat = e->data;
 	return e;
 }
 
 Err *
-errcat(Err *e, char *s1, char *s2)
+errcat(Err *e, char *fmt, ...)
 {
-	if (!e->full && e->ndata + strlen(s1) + strlen(s2) + 3 >= ERRMAX) {
-		strcpy(e->cat, "...");
-		e->ndata += 3;
-		e->cat += 3;
-		e->full++;
-	} else {
-		strcpy(e->cat, s1);
-		e->cat += strlen(s1);
-		e->ndata += strlen(s1);
-		strcpy(e->cat, s2);
-		e->cat += strlen(s2);
-		e->ndata += strlen(s2);
+	va_list ap;
+	int n;
+
+	if (!e->full) {
+		va_start(ap, fmt);
+		n = vsnprint(e->cat, ERRSIZE - e->ndata - 3, fmt, ap);
+		if (n >= ERRSIZE - e->ndata -3) {
+			strcpy(e->cat, "...");
+			e->ndata += 3;
+			e->cat += 3;
+			e->full++;
+		} else {
+			e->ndata += n;
+			e->cat += n;
+		}
 	}
 	return e;
 }
