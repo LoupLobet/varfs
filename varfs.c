@@ -50,6 +50,7 @@ static FsFile fsfile[Qend] = {
 };
 
 static char *mtpt;
+static char *fsname;
 
 void
 threadmain(int argc, char *argv[])
@@ -65,11 +66,18 @@ threadmain(int argc, char *argv[])
 		if (mtpt == nil)
 			goto Usage;
 		break;
+	case 'n':
+		fsname = ARGF();
+		if (fsname == nil)
+			goto Usage;
+		break;
 	default:
 	Usage:
 		usage();
 	} ARGEND
 
+	if (fsname == nil)
+		fsname = "varfs";
 	fs.tree = alloctree(nil, nil, DMDIR|0777, destroy);
 	for (i = Qnew; i < Qend; i++) {
 		createfile(fs.tree->root, fsfile[i].name, nil, fsfile[i].mode, nil);
@@ -90,7 +98,8 @@ threadmain(int argc, char *argv[])
 	if (e->ndata)
 		fprint(2, e->data);
 	fs.foreground = 1;
-	threadpostmountsrv(&fs, "varfs", mtpt, MREPL | MCREATE);
+	print("mtpt=%s\n", mtpt);
+	threadpostmountsrv(&fs, fsname, mtpt, MREPL | MCREATE);
 }
 
 static void
@@ -219,7 +228,7 @@ readvar(Req *r)
 static void
 usage(void)
 {
-	fprint(2, "usage: varfs [-m mtpt][var ...]\n");
+	fprint(2, "usage: varfs [-n fsname] [-m mtpt][var ...]\n");
 	threadexitsall("usage");
 }
 
