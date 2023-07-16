@@ -49,6 +49,7 @@ static FsFile fsfile[Qend] = {
 	[Qdel]    = { "del",   0222 },
 };
 
+static char *mtpt;
 
 void
 threadmain(int argc, char *argv[])
@@ -59,7 +60,13 @@ threadmain(int argc, char *argv[])
 	int i;
 
 	ARGBEGIN {
+	case 'm':
+		mtpt = ARGF();
+		if (mtpt == nil)
+			goto Usage;
+		break;
 	default:
+	Usage:
 		usage();
 	} ARGEND
 
@@ -83,7 +90,7 @@ threadmain(int argc, char *argv[])
 	if (e->ndata)
 		fprint(2, e->data);
 	fs.foreground = 1;
-	threadpostmountsrv(&fs, "varfs", nil, MREPL | MCREATE);
+	threadpostmountsrv(&fs, "varfs", mtpt, MREPL | MCREATE);
 }
 
 static void
@@ -212,7 +219,7 @@ readvar(Req *r)
 static void
 usage(void)
 {
-	fprint(2, "usage: varfs [var ...]\n");
+	fprint(2, "usage: varfs [-m mtpt][var ...]\n");
 	threadexitsall("usage");
 }
 
