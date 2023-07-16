@@ -8,5 +8,5 @@ typedef struct {
 } Err;
 
 Err	*err(void);
-Err *errcat(Err *, char *, ...);
+Err	*errcat(Err *, char *, ...);
 void	 errfree(Err *);
