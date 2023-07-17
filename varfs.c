@@ -98,7 +98,6 @@ threadmain(int argc, char *argv[])
 	if (e->ndata)
 		fprint(2, e->data);
 	fs.foreground = 1;
-	print("mtpt=%s\n", mtpt);
 	threadpostmountsrv(&fs, fsname, mtpt, MREPL | MCREATE);
 }
 
@@ -228,7 +227,7 @@ readvar(Req *r)
 static void
 usage(void)
 {
-	fprint(2, "usage: varfs [-n fsname] [-m mtpt][var ...]\n");
+	fprint(2, "usage: varfs [-n fsname] [-m mtpt] [var ...]\n");
 	threadexitsall("usage");
 }
 
