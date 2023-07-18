@@ -1,5 +1,5 @@
 # varfs
-Super simple but versatile 9p filesystem serving multipurpose variables.
+Super simple, but versatile, 9p filesystem serving multipurpose variables.
 
 `usage: varfs [-n fsname] [-m mtpt] [var ...]`
 
